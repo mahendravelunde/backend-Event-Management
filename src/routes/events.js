@@ -1,6 +1,6 @@
 const express = require('express');
 const router = express.Router();
-const { getEvents, createEvent, deleteEvent } = require('../controllers/eventController');
+const { getEvents, createEvent, deleteEvent,updateEvent } = require('../controllers/eventController');
 // const auth = require('../middleware/auth');
 const  {auth , isAdmin}  = require('../middleware/auth');
 const upload = require("../config/multer");
@@ -10,7 +10,7 @@ router.get('/', auth, getEvents);
 
 router.delete('/:eventId', auth, deleteEvent);
 
-
+router.put('/:eventId', auth, updateEvent);
 
 router.post(
   '/',

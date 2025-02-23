@@ -87,6 +87,40 @@ exports.createEventWork = async (req, res) => {
   }
 };
 
+exports.getEventsWorking = async (req, res) => {
+  try {
+    let events;
+    
+    if (req.user.role === 'admin') {
+      events = await Event.find().populate('createdBy', 'name email');
+    } else {
+      events = await Event.find({
+        attendees: req.user.email
+      }).populate('createdBy', 'name email');
+    }
+
+    console.log("events",Event)
+
+
+    // Decrypt web links
+    const decryptedEvents = await Promise.all(events.map(async (event) => {
+      const eventObj = event.toObject();
+      eventObj.role = req.user.role;
+      if (eventObj.eventWebLink) {
+        eventObj.eventWebLink = await decrypt(eventObj.eventWebLink);
+      }
+      return eventObj;
+    }));
+    // res.json({
+    //   role: req.user.role,  // Include the role in the response
+    //   events: decryptedEvents
+    // });
+    res.json(decryptedEvents);
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+};
+
 exports.createEvent = async (req, res) => {
   try {
     const { eventName, eventDate, eventType, eventWebLink } = req.body;
@@ -143,40 +177,6 @@ exports.createEvent = async (req, res) => {
     });
   } catch (error) {
     res.status(400).json({ error: error.message });
-  }
-};
-
-exports.getEventsWorking = async (req, res) => {
-  try {
-    let events;
-    
-    if (req.user.role === 'admin') {
-      events = await Event.find().populate('createdBy', 'name email');
-    } else {
-      events = await Event.find({
-        attendees: req.user.email
-      }).populate('createdBy', 'name email');
-    }
-
-    console.log("events",Event)
-
-
-    // Decrypt web links
-    const decryptedEvents = await Promise.all(events.map(async (event) => {
-      const eventObj = event.toObject();
-      eventObj.role = req.user.role;
-      if (eventObj.eventWebLink) {
-        eventObj.eventWebLink = await decrypt(eventObj.eventWebLink);
-      }
-      return eventObj;
-    }));
-    // res.json({
-    //   role: req.user.role,  // Include the role in the response
-    //   events: decryptedEvents
-    // });
-    res.json(decryptedEvents);
-  } catch (error) {
-    res.status(500).json({ error: error.message });
   }
 };
 
@@ -257,3 +257,58 @@ exports.deleteEvent = async (req, res) => {
     res.status(500).json({ error: error.message });
   }
 };
+
+exports.updateEvent = async (req, res) => {
+  try {
+    const { eventId } = req.params;
+    const { eventName, eventDate, eventType, eventWebLink } = req.body;
+
+    // Only admin can update events
+    if (req.user.role !== 'admin') {
+      return res.status(403).json({ error: 'Only admin can update events' });
+    }
+
+    let eventData = {
+      eventName,
+      eventDate: new Date(eventDate),
+      eventType
+    };
+
+    // Handle file updates
+    if (req.files) {
+      if (req.files.eventFile) {
+        eventData.eventFile = req.files.eventFile[0].filename;
+      }
+      if (req.files.attendeeList) {
+        eventData.attendeeListFile = req.files.attendeeList[0].filename;
+
+        // Process Excel file
+        const workbook = xlsx.readFile(req.files.attendeeList[0].path);
+        const sheetName = workbook.SheetNames[0];
+        const sheet = workbook.Sheets[sheetName];
+        const jsonData = xlsx.utils.sheet_to_json(sheet);
+        eventData.attendees = jsonData.map(row => row.Email || row.Name);
+      }
+    }
+
+    // Encrypt web link if provided
+    if (eventWebLink) {
+      eventData.eventWebLink = await encrypt(eventWebLink);
+    }
+
+    // Find and update event
+    const updatedEvent = await Event.findByIdAndUpdate(eventId, eventData, { new: true });
+
+    if (!updatedEvent) {
+      return res.status(404).json({ error: 'Event not found' });
+    }
+
+    res.status(200).json({
+      message: 'Event updated successfully',
+      event: updatedEvent
+    });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+};
+
