@@ -146,7 +146,7 @@ exports.createEvent = async (req, res) => {
   }
 };
 
-exports.getEvents = async (req, res) => {
+exports.getEventsWorking = async (req, res) => {
   try {
     let events;
     
@@ -175,6 +175,84 @@ exports.getEvents = async (req, res) => {
     //   events: decryptedEvents
     // });
     res.json(decryptedEvents);
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+};
+
+exports.getEvents = async (req, res) => {
+  try {
+    let { search, eventDate, page = 1, limit = 2 } = req.query;
+    let filter = {};
+
+    // Ensure page & limit are numbers
+    page = parseInt(page);
+    limit = parseInt(limit);
+
+    // Admin sees all events, users see only their events
+    if (req.user.role !== 'admin') {
+      filter.attendees = req.user.email;
+    }
+
+    // Search by event name (case-insensitive)
+    if (search) {
+      filter.eventName = { $regex: search, $options: 'i' };
+    }
+
+    // Filter by event date
+    if (eventDate) {
+      filter.eventDate = new Date(eventDate);
+    }
+
+    // Pagination (skip and limit)
+    const events = await Event.find(filter)
+      .populate('createdBy', 'name email')
+      .skip((page - 1) * limit)
+      .limit(limit);
+
+    // Get total event count for pagination metadata
+    const totalEvents = await Event.countDocuments(filter);
+    
+    // Decrypt web links
+    const decryptedEvents = await Promise.all(events.map(async (event) => {
+      const eventObj = event.toObject();
+      if (eventObj.eventWebLink) {
+        eventObj.eventWebLink = await decrypt(eventObj.eventWebLink);
+      }
+      return eventObj;
+    }));
+
+    res.json({
+      page,
+      limit,
+      totalPages: Math.ceil(totalEvents / limit),
+      totalEvents,
+      role: req.user.role,
+      events: decryptedEvents,
+    });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+};
+
+exports.deleteEvent = async (req, res) => {
+  try {
+    
+    const { eventId } = req.params;
+    
+    // Only admin can delete events
+    if (req.user.role !== 'admin') {
+      return res.status(403).json({ error: 'Only admin can delete events' });
+    }
+
+    // Find and delete event
+    const event = await Event.findByIdAndDelete(eventId);
+    
+    if (!event) {
+      return res.status(404).json({ error: 'Event not found' });
+    }
+
+    res.json({ message: 'Event deleted successfully' });
   } catch (error) {
     res.status(500).json({ error: error.message });
   }
