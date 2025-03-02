@@ -180,7 +180,7 @@ exports.createEvent = async (req, res) => {
   }
 };
 
-exports.getEvents = async (req, res) => {
+exports.getEventswo = async (req, res) => {
   try {
     let { search, eventDate, page = 1, limit = 2 } = req.query;
     let filter = {};
@@ -232,6 +232,77 @@ exports.getEvents = async (req, res) => {
     });
   } catch (error) {
     res.status(500).json({ error: error.message });
+  }
+};
+
+exports.getEvents = async (req, res) => {
+  try {
+    let { search, eventDate, page = 1, limit = 10 } = req.query;
+    let filter = {};
+    
+    // Ensure page & limit are numbers
+    page = parseInt(page);
+    limit = parseInt(limit);
+    
+    // Admin sees all events, users see only their events
+    if (req.user.role !== 'admin') {
+      filter.attendees = req.user.email;
+    }
+    
+    // Search by event name (case-insensitive)
+    if (search) {
+      filter.eventName = { $regex: search, $options: 'i' };
+    }
+    
+    // Filter by event date
+    if (eventDate) {
+      filter.eventDate = new Date(eventDate);
+    }
+    
+    // Pagination (skip and limit)
+    const events = await Event.find(filter)
+      .populate('createdBy', 'name email')
+      .skip((page - 1) * limit)
+      .limit(limit);
+    
+    // Get total event count for pagination metadata
+    const totalEvents = await Event.countDocuments(filter);
+    
+    // Import decrypt function to handle encrypted links
+    const { decrypt } = require('../utils/encryption');
+    
+    // Process events to handle encrypted fields
+    const processedEvents = events.map(event => {
+      const eventObj = event.toObject();
+      
+      // Handle eventWebLink if it exists
+      if (eventObj.eventWebLink) {
+        try {
+          // Try to decrypt, but won't fail if not encrypted or improperly formatted
+          eventObj.eventWebLink = decrypt(eventObj.eventWebLink);
+        } catch (error) {
+          console.warn(`Non-critical error with event ${eventObj._id} link:`, error.message);
+          // Keep original value if decryption fails
+        }
+      }
+      
+      return eventObj;
+    });
+    
+    res.json({
+      page,
+      limit,
+      totalPages: Math.ceil(totalEvents / limit),
+      totalEvents,
+      role: req.user.role,
+      events: processedEvents,
+    });
+  } catch (error) {
+    console.error('Error in getEvents controller:', error);
+    res.status(500).json({ 
+      error: 'Failed to retrieve events',
+      message: process.env.NODE_ENV === 'development' ? error.message : undefined
+    });
   }
 };
 
