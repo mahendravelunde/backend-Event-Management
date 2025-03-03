@@ -332,8 +332,9 @@ exports.deleteEvent = async (req, res) => {
 exports.updateEvent = async (req, res) => {
   try {
     const { eventId } = req.params;
-    const { eventName, eventDate, eventType, eventWebLink } = req.body;
+    const { eventName, eventType, eventWebLink } = req.body;
 
+    console.log("req",req.body)
     // Only admin can update events
     if (req.user.role !== 'admin') {
       return res.status(403).json({ error: 'Only admin can update events' });
@@ -341,7 +342,7 @@ exports.updateEvent = async (req, res) => {
 
     let eventData = {
       eventName,
-      eventDate: new Date(eventDate),
+      //eventDate: new Date(eventDate),
       eventType
     };
 
@@ -358,6 +359,7 @@ exports.updateEvent = async (req, res) => {
         const sheetName = workbook.SheetNames[0];
         const sheet = workbook.Sheets[sheetName];
         const jsonData = xlsx.utils.sheet_to_json(sheet);
+        console.log("jsonData",jsonData)
         eventData.attendees = jsonData.map(row => row.Email || row.Name);
       }
     }
@@ -369,7 +371,7 @@ exports.updateEvent = async (req, res) => {
 
     // Find and update event
     const updatedEvent = await Event.findByIdAndUpdate(eventId, eventData, { new: true });
-
+    console.log("updatedEvent",updatedEvent)
     if (!updatedEvent) {
       return res.status(404).json({ error: 'Event not found' });
     }
